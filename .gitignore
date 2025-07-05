@@ -2,3 +2,5 @@ docker-compose.db.yml
 __pycache__
 output.json
 venv
+rag2.py
+mem.py

@@ -3,49 +3,46 @@ from scrapy.crawler import CrawlerProcess
 from urllib.parse import urlparse, urljoin
 import logging
 
-
 class WebsiteSpider(scrapy.Spider):
-    name = 'website'
+    name = "website"
 
     def __init__(self, start_url=None, *args, **kwargs):
-        super(WebsiteSpider, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.start_urls = [start_url]
         self.allowed_domains = [urlparse(start_url).netloc]
 
     def parse(self, response):
+        main = response.css('main') or response
+
+        content_elements = main.css('p, li, pre, code, h1, h2, h3, h4, h5, h6')
+        content = " ".join([el.get().strip() for el in content_elements.xpath("string()")])
+
         yield {
-            'url': response.url,
-            'title': response.css('title::text').get(),
-            'content': ' '.join(response.css('p::text').getall()),
+            "url": response.url,
+            "title": main.css('h1::text').get(default="").strip(),
+            "content": content,
         }
 
-        for href in response.css('a::attr(href)'):
-            url = urljoin(response.url, href.get())
-            if url.startswith('http'):
-                yield response.follow(url, self.parse)
-
+        # Crawl internal links
+        for link in main.css('a::attr(href)').getall():
+            full_url = urljoin(response.url, link)
+            if full_url.startswith("http") and urlparse(full_url).netloc == self.allowed_domains[0]:
+                yield response.follow(full_url, self.parse)
 
 def scrape(start_url, output_file='output.json'):
-    """
-    Run the WebsiteSpider with the given parameters.
-
-    :param start_url: The starting URL for the spider.
-    """
-    
-    logging.getLogger('scrapy').setLevel(logging.CRITICAL)
+    logging.getLogger("scrapy").setLevel(logging.CRITICAL)
 
     process = CrawlerProcess(settings={
-        'FEEDS': {
+        "FEEDS": {
             output_file: {
-                'format': 'json',
-                'overwrite': True
-            },
+                "format": "json",
+                "overwrite": True
+            }
         },
-        'LOG_LEVEL': 'CRITICAL',
-        'ROBOTSTXT_OBEY': True,
-        'CONCURRENT_REQUESTS': 8,
-        'DOWNLOAD_DELAY': 1,
-        'DEPTH_LIMIT': 5,
+        "ROBOTSTXT_OBEY": False,
+        "DOWNLOAD_DELAY": 0.5,
+        "DEPTH_LIMIT": 12,
+        "CONCURRENT_REQUESTS": 16,
     })
 
     process.crawl(WebsiteSpider, start_url=start_url)
